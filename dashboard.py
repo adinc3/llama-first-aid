@@ -6,6 +6,10 @@ import pandas as pd
 import dash_bootstrap_components as dbc
 from dash.dependencies import Input, Output
 
+import sys
+sys.path.append('src')
+from utils import country_translation
+
 
 # Load dataset (must be switched to a BigQuery load)
 df = pd.read_csv("data/sessions_history/sessions_history.csv")
@@ -169,7 +173,7 @@ users_page = html.Div([
         ])
     ], style={'padding': '20px'}),
 
-    # Third Row - 2 graphs and no filter for the second graph
+    # Third Row
     html.Div([
         dbc.Row([
             dbc.Col([
@@ -181,7 +185,13 @@ users_page = html.Div([
                     style={'width': '50%'}  # Optional: style for the label text
                 ),
                 dcc.Graph(id='graph-7-users'),
-            ], width=6),
+            ], width='100%'),
+        ])
+    ], style={'padding': '15px'}),
+
+    # Fourth Row
+    html.Div([
+        dbc.Row([
             dbc.Col([
                 html.H6("Heatmap of worldwide sessions", style={'textAlign': 'center'}),
                 dbc.Switch(
@@ -192,22 +202,22 @@ users_page = html.Div([
                 ),                  
                 html.Label('Severity:', style={'margin-right': '10px', 'display': 'inline-block'}),
                 dcc.Dropdown(
-                    id='graph-8-users-filter',
+                    id='graph-8-users-filter-severity',
                     options=severities,
                     value='All',  # Default value
                     style={'width': '50%'}
                 ),
                 html.Label('Medical Class:', style={'margin-right': '10px', 'display': 'inline-block'}),
                 dcc.Dropdown(
-                    id='graph-8-users-filter',
+                    id='graph-8-users-filter-medical-class',
                     options=medical_classes,
                     value='All',  # Default value
                     style={'width': '50%'}
                 ),
                 dcc.Graph(id='graph-8-users'),
-            ], width=6)
+            ], width='100%'),
         ])
-    ], style={'padding': '20px'}),
+    ], style={'padding': '15px'}),
 ])
 
 # Layout for performance Page
@@ -304,10 +314,14 @@ def display_page(pathname):
         Input('graph-4-users-filter', 'value'),
         Input('graph-5-users-filter', 'value'),
         Input('graph-6-users-filter', 'value'),
-        Input('graph-7-users-toggle-button', 'value')
+        Input('graph-7-users-toggle-button', 'value'),
+        Input('graph-8-users-toggle-button', 'value'),
+        Input('graph-8-users-filter-severity', 'value'),
+        Input('graph-8-users-filter-medical-class', 'value')
     ]
 )
-def update_graphs(start_date, end_date, app_version, graph_4_severity_level, graph_5_medical_class, graph_6_medical_class, graph_7_toggle_button):
+def update_graphs(start_date, end_date, app_version, graph_4_severity_level, graph_5_medical_class, graph_6_medical_class, graph_7_toggle_button, graph_8_toggle_button,
+                graph_8_severity_level, graph_8_medical_class):
     # Filter the data based on the selected date range and app_version filter
     start_date = pd.to_datetime(start_date).date()  # Convert to date
     end_date = pd.to_datetime(end_date).date()  # Convert to date
@@ -653,21 +667,98 @@ def update_graphs(start_date, end_date, app_version, graph_4_severity_level, gra
     )
 
 
-    # Sixth Plot
-    # coordinates_df = filtered_df[['country', 'sessions']]  # Adjust as necessary
-# 
-    # # Group by country and sum the sessions
-    # country_sessions = coordinates_df.groupby('country')['sessions'].sum().reset_index()
-# 
-    # # Create a choropleth map
-    # choropleth_map = px.choropleth(country_sessions,
-    #                                 locations='country',
-    #                                 locationmode='country names',
-    #                                 color='sessions',
-    #                                 hover_name='country',
-    #                                 color_continuous_scale="Viridis",
-    #                                 labels={'sessions': 'Total Sessions'},
-    #                                 title="Total Sessions by Country")
+    # SEVENTH PLOT
+    # Prepare the data
+    coordinates_df = filtered_df[['country', 'session_id']]  # Adjust as necessary
+    coordinates_df['country'] = coordinates_df['country'].replace(country_translation)
+
+    # Group by country and sum the sessions
+    country_sessions = coordinates_df.groupby('country')['session_id'].nunique().reset_index()
+
+    # Create a choropleth map with a custom color scale
+    choropleth_map = px.choropleth(country_sessions,
+                                    locations='country',
+                                    locationmode='country names',
+                                    color='session_id',
+                                    hover_name='country',
+                                    color_continuous_scale=["#d1e9d3", "#4caf50"])
+
+    # Update layout for a more beautiful map
+    choropleth_map.update_layout(
+        coloraxis_colorbar_title="Sessions",
+        coloraxis_colorbar_x=0,  # Position the color bar to the left
+        coloraxis_colorbar_xpad=10,  # Optional padding from the map
+        coloraxis_colorbar_ypad=10,  # Optional padding from the map
+        geo=dict(
+            projection_type="natural earth",  # Using a more beautiful map projection (Natural Earth)
+            showcoastlines=True,  # Display coastlines
+            coastlinecolor="gray",  # Set coastline color to gray for subtlety
+            showland=True,  # Show land areas
+            landcolor="whitesmoke",  # Set land color to a soft grayish white
+            subunitcolor="gray",  # Subunit color for borders
+            showlakes=True,  # Display lakes
+            lakecolor="lightblue",  # Color of lakes for better visual contrast
+        ),
+        title_x=0.5,  # Center the title horizontally
+        title_font=dict(
+            size=24,  # Title font size
+            family="Arial, sans-serif",  # Title font family
+            color="black"  # Title font color
+        ),
+        margin={"r": 0, "t": 50, "l": 0, "b": 0},  # Adjust margins for better padding
+        font=dict(
+            family="Arial, sans-serif",  # Font family for labels and hover info
+            size=14,  # Font size
+            color="black"  # Font color
+        ),
+    )
+
+
+    # EIGHTH PLOT
+    # Replace native country names with their English equivalents
+    hm_df = filtered_df[['location', 'session_id']]  # Ensure this contains lat, long, and session_id
+    hm_df['latitude'] = hm_df['location'].apply(lambda x: eval(x)[0])
+    hm_df['longitude'] = hm_df['location'].apply(lambda x: eval(x)[1])
+
+    # Group by latitude and longitude, summing the sessions
+    coordinates_sessions = hm_df.groupby(['latitude', 'longitude'])['session_id'].nunique().reset_index()
+
+    # Create a heatmap using scatter_mapbox
+    heatmap_map = px.scatter_mapbox(
+        coordinates_sessions,
+        lat="latitude",
+        lon="longitude",
+        size="session_id",  # The size of the points is determined by the session count
+        color="session_id",  # The color of the points is also based on the session count
+        hover_name="session_id",  # Display session count on hover
+        color_continuous_scale=["#ffcccc", "#990000"],  # Color scale from light red to dark red
+        labels={'session_id': 'Sessions'},
+        size_max=8,  # Reduced maximum bubble size
+    )
+
+    # Update layout to make the heatmap visually beautiful with reduced bubble sizes
+    heatmap_map.update_layout(
+        mapbox_style="carto-positron",  # Map style; you can use "stamen-terrain" or others
+        mapbox_zoom=2,  # Set default zoom level for Europe (zoom level 4 works well)
+        mapbox_center={"lat": 50, "lon": 10},  # Center the map on Europe (roughly lat=50, lon=10)
+        title_x=0.5,  # Center the title horizontally
+        title_font=dict(
+            size=24,  # Title font size
+            family="Arial, sans-serif",  # Title font family
+            color="black"  # Title font color
+        ),
+        coloraxis_colorbar_title="Sessions",  # Title for the color scale
+        font=dict(
+            family="Arial, sans-serif",  # Font family for labels and hover info
+            size=14,  # Font size
+            color="black"  # Font color
+        ),
+        mapbox=dict(
+            style="carto-positron",  # Style of the map background (clean white background)
+        ),
+        autosize=True,  # Automatically adjust size based on the data
+    )
+
 
     # --- Return the figures for all graphs ---
     return (
@@ -678,8 +769,8 @@ def update_graphs(start_date, end_date, app_version, graph_4_severity_level, gra
         medical_class_bar_chart,  # Bar chart for medical class percentages
         composition_graph,  # Bar chart for weekday and severity composition
         composition_graph_2,  # Bar chart for hour range and severity composition
-        composition_graph,  # Choropleth map for sessions by country
-        composition_graph
+        choropleth_map,  # Choropleth map for sessions by country
+        heatmap_map  # Heatmap for sessions by country
     )
 
 
